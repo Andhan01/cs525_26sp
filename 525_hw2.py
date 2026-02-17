@@ -20,7 +20,7 @@ def bfs(adj, src):
     return dist
 
 def add_random_edges(adj, k):
-
+    random.seed(0)
     nodes = list(adj.keys())
 
     for v in nodes:
@@ -250,6 +250,12 @@ diam_hc = []
 bisec_2d = []
 bisec_3d = []
 bisec_hc = []
+
+
+dilation_lst = []
+congestion_lst = []
+
+
 for p in p_values:
     print(f"Running p = {p}")
     #============================Q1 and Q2==============================
@@ -273,11 +279,13 @@ for p in p_values:
     
     #===============================Q3===================================
     dilation, congestion = compute_dilation_and_congestion(adjA=adj2d, adjB=adj3d)
+    dilation_lst.append(dilation)
+    congestion_lst.append(congestion)
     print(f"p = {p}: Dilation = {dilation}, Congestion = {congestion}")
 
 
 
-
+#=====================================plot of Q1=====================================
 
 p_fit = np.linspace(min(p_values), max(p_values), 100)
 
@@ -306,7 +314,7 @@ plt.show()
 # print('bisection of hypercube ',bisec_hc)
 
 
-
+#=====================================plot of Q2=====================================
 
 paramss_2d, _ = curve_fit(power_law, p_values, bisec_2d)
 paramss_3d, _ = curve_fit(power_law, p_values, bisec_3d)
@@ -327,7 +335,20 @@ plt.legend()
 plt.show()
 
 
+#=====================================plot of Q3=====================================
 
+plt.plot(p_values, dilation_lst, 'o-', label="dilation vs p")
+plt.xlabel("p")
+plt.ylabel("Estimated Dilation")
+plt.legend()
+plt.show()
+plt.plot(p_values, congestion_lst, 'o-', label="congestion vs p")
+plt.xlabel("p")
+plt.ylabel("Estimated Congestion")
+plt.legend()
+plt.show()
+
+#=====================================output of Q4=====================================
 
 
 print("\n" + "="*70)
