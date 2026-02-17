@@ -43,7 +43,21 @@ def add_random_edges(adj, k):
                 adj[w].add(v)
             k_prime -= len(E_prime)
     return adj
+def build_2d_mesh(p):
+    n = int(math.sqrt(p))
+    adj = {i: set() for i in range(p)}
 
+    for r in range(n):
+        for c in range(n):
+            idx = r * n + c
+            if r + 1 < n:
+                adj[idx].add((r+1)*n + c)
+                adj[(r+1)*n + c].add(idx)
+            if c + 1 < n:
+                adj[idx].add(r*n + (c+1))
+                adj[r*n + (c+1)].add(idx)
+
+    return adj
 def build_3d_mesh(p):
     n = round(p ** (1/3))
     adj = {i: set() for i in range(p)}
@@ -79,7 +93,7 @@ def build_hypercube(d):
 
     return adj
 
-def estimate_diameter(adj, samples=100):
+def estimate_diameter(adj, samples=1000):
     nodes = list(adj.keys())
     max_d = 0
 
@@ -90,7 +104,7 @@ def estimate_diameter(adj, samples=100):
 
     return max_d
 
-def estimate_bisection(adj, trials=50):
+def estimate_bisection(adj, trials=1000):
     nodes = list(adj.keys())
     p = len(nodes)
     min_cut = float("inf")
@@ -224,8 +238,8 @@ def compare_networks(adjA, adjB, link_speed_A, link_speed_B, p, k):
 # Main Function
 # ============================================================
 
-p_values = [2**6, 3**6, 4**6, 5**6, 6**6]
-# p_values = [2**6, 3**6, 4**6]
+# p_values = [2**6, 3**6, 4**6, 5**6, 6**6]
+p_values = [2**6, 3**6, 4**6]
 k = 4
 
 
@@ -256,11 +270,19 @@ for p in p_values:
     adjhc = add_random_edges(adjhc, k)
     diam_hc.append(estimate_diameter(adjhc))
     bisec_hc.append(estimate_bisection(adjhc))
-
+    
+    #===============================Q3===================================
     dilation, congestion = compute_dilation_and_congestion(adjA=adj2d, adjB=adj3d)
     print(f"p = {p}: Dilation = {dilation}, Congestion = {congestion}")
 
+
+
+
+
 p_fit = np.linspace(min(p_values), max(p_values), 100)
+
+
+
 params_2d, _ = curve_fit(power_law, p_values, diam_2d)
 params_3d, _ = curve_fit(power_law, p_values, diam_3d)
 params_hc, _ = curve_fit(power_law, p_values, diam_hc)
@@ -279,9 +301,34 @@ plt.ylabel("Estimated Diameter")
 plt.legend()
 plt.show()
 
-print('bisection of 2d-mesh ',bisec_2d)
-print('bisection of 3d-mesh ',bisec_3d)
-print('bisection of hypercube ',bisec_hc)
+# print('bisection of 2d-mesh ',bisec_2d)
+# print('bisection of 3d-mesh ',bisec_3d)
+# print('bisection of hypercube ',bisec_hc)
+
+
+
+
+paramss_2d, _ = curve_fit(power_law, p_values, bisec_2d)
+paramss_3d, _ = curve_fit(power_law, p_values, bisec_3d)
+paramss_hc, _ = curve_fit(power_law, p_values, bisec_hc)
+
+plt.plot(p_fit, power_law(p_fit, *paramss_2d), '--', label=f"2D fit: {paramss_2d[0]:.2f}*p^{paramss_2d[1]:.3f}")
+plt.plot(p_fit, power_law(p_fit, *paramss_3d), '--', label=f"3D fit: {paramss_3d[0]:.2f}*p^{paramss_3d[1]:.3f}")
+plt.plot(p_fit, power_law(p_fit, *paramss_hc), '--', label=f"hc fit: {paramss_hc[0]:.2f}*p^{paramss_hc[1]:.3f}")
+
+
+
+plt.plot(p_values, bisec_2d,'s-', label="2D Mesh + k")
+plt.plot(p_values, bisec_3d, 'o-', label="3D Mesh + k")
+plt.plot(p_values, bisec_hc, '^-', label="Hypercube + k")
+plt.xlabel("p")
+plt.ylabel("Estimated Bisection")
+plt.legend()
+plt.show()
+
+
+
+
 
 print("\n" + "="*70)
 print("Question 4: Network Performance Comparison")
@@ -305,5 +352,29 @@ for para4 in [(2**6, 4),(4**6, 2)]:
         p=p1,
         k=k1
     )
+
+
+# Please simulate the network to estimate the parameters. 
+# You need to compute the number of links in E' 
+# that any edge in E is mapped onto and then took the max count to estimate te dilation of the mapping
+
+
+
+# I did 10k sampling times to get the bisection. You can choose a reasonable number of iteration times. 
+# If there is high variance, please consider increasing the sampling times or report the minimum/median number. 
+# But you need to write the report clearly about your data.
+
+# Fit a curve with 5 data points. There are lots of curve fitting functions available, 
+# you are free to choose any based on your choice of tool/language. 
+# You can fit the curve and then match against theoretical one.
+# For part 2, please fit the curve too.
+# For part 3, yes, please include plots and any relevant informations.
+
+
+# Since no explicit strategy is given, like for Parts 1 and 2, can we sample src, dest to approximate both dilation and congestion?
+# You need to simulate the network and compute by deriving the values for each edge and take the max.
+
+
+#Q6 Part 3 Use the identity mapping as specified in the problem statement.
 
 
