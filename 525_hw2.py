@@ -4,9 +4,6 @@ import random
 import collections
 import math
 
-# =====================================================
-# Graph
-# =====================================================
 class Graph:
     def __init__(self, n):
         self.n = n
@@ -17,9 +14,6 @@ class Graph:
             self.adj[u].add(v)
             self.adj[v].add(u)
 
-# =====================================================
-# Network generators
-# =====================================================
 def mesh2d(p):
     s = int(round(math.sqrt(p)))
     G = Graph(p)
@@ -56,9 +50,6 @@ def hypercube_from_p(p):
                 G.add_edge(u,v)
     return G, n
 
-# =====================================================
-# Add k random shortcuts
-# =====================================================
 def add_random_edges(G,k,seed):
     random.seed(int(seed))
     for v in range(G.n):
@@ -69,9 +60,6 @@ def add_random_edges(G,k,seed):
                 G.add_edge(v,w)
                 added+=1
 
-# =====================================================
-# BFS
-# =====================================================
 def bfs(G,src):
     dist=[-1]*G.n
     dist[src]=0
@@ -84,9 +72,6 @@ def bfs(G,src):
                 q.append(v)
     return dist
 
-# =====================================================
-# Diameter (double sweep)
-# =====================================================
 def estimate_diameter(G):
     s=random.randrange(G.n)
     d=bfs(G,s)
@@ -94,9 +79,6 @@ def estimate_diameter(G):
     d2=bfs(G,far)
     return max(d2)
 
-# =====================================================
-# Bisection (random equipartitions)
-# =====================================================
 def estimate_bisection(G,trials=20):
     best=10**18
     for _ in range(trials):
@@ -111,9 +93,6 @@ def estimate_bisection(G,trials=20):
         best=min(best,cut)
     return best
 
-# =====================================================
-# Congestion (Monte Carlo proxy)
-# =====================================================
 def estimate_congestion(G,trials=2000,seed=0):
     random.seed(int(seed))
     edge_load={}
@@ -142,9 +121,6 @@ def estimate_congestion(G,trials=2000,seed=0):
         return 0
     return max(edge_load.values())
 
-# =====================================================
-# Experiment
-# =====================================================
 ps=np.array([64,729,4096,15625,46656],dtype=int)
 k=4
 
@@ -245,3 +221,4 @@ print("3D: B(p) ≈ {:.3f} p + {:.3f}".format(coefB3[0],coefB3[1]))
 print("HC: B(p) ≈ {:.3f} p + {:.3f}".format(coefBH[0],coefBH[1]))
 
 print("\nHypercube sizes used:",hc_sizes)
+
