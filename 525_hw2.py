@@ -1,401 +1,247 @@
-import random
-import math
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import deque, defaultdict
-from scipy.optimize import curve_fit
+import random
+import collections
+import math
 
-def power_law(p, a, b):
-    return a * (p ** b)
+# =====================================================
+# Graph
+# =====================================================
+class Graph:
+    def __init__(self, n):
+        self.n = n
+        self.adj = [set() for _ in range(n)]
 
-def bfs(adj, src):
-    dist = {src: 0}
-    q = deque([src])
+    def add_edge(self, u, v):
+        if v not in self.adj[u]:
+            self.adj[u].add(v)
+            self.adj[v].add(u)
+
+# =====================================================
+# Network generators
+# =====================================================
+def mesh2d(p):
+    s = int(round(math.sqrt(p)))
+    G = Graph(p)
+    def idx(i,j): return i*s+j
+    for i in range(s):
+        for j in range(s):
+            u = idx(i,j)
+            if i+1<s: G.add_edge(u, idx(i+1,j))
+            if j+1<s: G.add_edge(u, idx(i,j+1))
+    return G
+
+def mesh3d(p):
+    s = int(round(p**(1/3)))
+    G = Graph(p)
+    def idx(i,j,k): return i*s*s+j*s+k
+    for i in range(s):
+        for j in range(s):
+            for k in range(s):
+                u = idx(i,j,k)
+                if i+1<s: G.add_edge(u, idx(i+1,j,k))
+                if j+1<s: G.add_edge(u, idx(i,j+1,k))
+                if k+1<s: G.add_edge(u, idx(i,j,k+1))
+    return G
+
+def hypercube_from_p(p):
+    r = int(round(p**(1/6)))
+    d = 2*r
+    n = 1 << d
+    G = Graph(n)
+    for u in range(n):
+        for i in range(d):
+            v = u ^ (1<<i)
+            if v > u:
+                G.add_edge(u,v)
+    return G, n
+
+# =====================================================
+# Add k random shortcuts
+# =====================================================
+def add_random_edges(G,k,seed):
+    random.seed(int(seed))
+    for v in range(G.n):
+        added=0
+        while added<k:
+            w=random.randrange(G.n)
+            if w!=v and w not in G.adj[v]:
+                G.add_edge(v,w)
+                added+=1
+
+# =====================================================
+# BFS
+# =====================================================
+def bfs(G,src):
+    dist=[-1]*G.n
+    dist[src]=0
+    q=collections.deque([src])
     while q:
-        v = q.popleft()
-        for w in adj[v]:
-            if w not in dist:
-                dist[w] = dist[v] + 1
-                q.append(w)
+        u=q.popleft()
+        for v in G.adj[u]:
+            if dist[v]<0:
+                dist[v]=dist[u]+1
+                q.append(v)
     return dist
 
-def add_random_edges(adj, k):
-    random.seed(0)
-    nodes = list(adj.keys())
+# =====================================================
+# Diameter (double sweep)
+# =====================================================
+def estimate_diameter(G):
+    s=random.randrange(G.n)
+    d=bfs(G,s)
+    far=d.index(max(d))
+    d2=bfs(G,far)
+    return max(d2)
 
-    for v in nodes:
-        k_prime = k
-
-        while k_prime != 0:
-
-            candidates = random.sample(
-                [x for x in nodes if x != v],
-                k_prime
-            )
-
-            E_prime = []
-            for w in candidates:
-                if w not in adj[v]:
-                    E_prime.append(w)
-
-            for w in E_prime:
-                adj[v].add(w)
-                adj[w].add(v)
-            k_prime -= len(E_prime)
-    return adj
-def build_2d_mesh(p):
-    n = int(math.sqrt(p))
-    adj = {i: set() for i in range(p)}
-
-    for r in range(n):
-        for c in range(n):
-            idx = r * n + c
-            if r + 1 < n:
-                adj[idx].add((r+1)*n + c)
-                adj[(r+1)*n + c].add(idx)
-            if c + 1 < n:
-                adj[idx].add(r*n + (c+1))
-                adj[r*n + (c+1)].add(idx)
-
-    return adj
-def build_3d_mesh(p):
-    n = round(p ** (1/3))
-    adj = {i: set() for i in range(p)}
-
-    for x in range(n):
-        for y in range(n):
-            for z in range(n):
-                idx = x*n*n + y*n + z
-                if x+1 < n:
-                    nid = (x+1)*n*n + y*n + z
-                    adj[idx].add(nid)
-                    adj[nid].add(idx)
-                if y+1 < n:
-                    nid = x*n*n + (y+1)*n + z
-                    adj[idx].add(nid)
-                    adj[nid].add(idx)
-                if z+1 < n:
-                    nid = x*n*n + y*n + (z+1)
-                    adj[idx].add(nid)
-                    adj[nid].add(idx)
-
-    return adj
-
-def build_hypercube(d):
-    # d = int(math.log2(p))
-    p = 2**d
-    adj = {i: set() for i in range(p)}
-
-    for i in range(p):
-        for bit in range(d):
-            neighbor = i ^ (1 << bit)
-            adj[i].add(neighbor)
-
-    return adj
-
-def estimate_diameter(adj, samples=1000):
-    nodes = list(adj.keys())
-    max_d = 0
-
-    for _ in range(samples):
-        src = random.choice(nodes)
-        dist = bfs(adj, src)
-        max_d = max(max_d, max(dist.values()))
-
-    return max_d
-
-def estimate_bisection(adj, trials=1000):
-    nodes = list(adj.keys())
-    p = len(nodes)
-    min_cut = float("inf")
-
+# =====================================================
+# Bisection (random equipartitions)
+# =====================================================
+def estimate_bisection(G,trials=20):
+    best=10**18
     for _ in range(trials):
-        part = set(random.sample(nodes, p//2))
-        cut = 0
-        for v in part:
-            for w in adj[v]:
-                if w not in part:
-                    cut += 1
-        min_cut = min(min_cut, cut)
+        perm=list(range(G.n))
+        random.shuffle(perm)
+        A=set(perm[:G.n//2])
+        cut=0
+        for u in A:
+            for v in G.adj[u]:
+                if v not in A:
+                    cut+=1
+        best=min(best,cut)
+    return best
 
-    return min_cut
-
-def compute_dilation_and_congestion(adjA, adjB):
-    p = len(adjA)
-    max_dilation = 0
-    edge_load = defaultdict(int)
-
-    for u in range(p):
-        neighbors_in_A = [v for v in adjA[u] if v > u]
-        if not neighbors_in_A:
-            continue
-
-        dist = {u: 0}
-        parent = {u: None}
-        q = deque([u])
-
-        found_count = 0
-        target_count = len(neighbors_in_A)
-
+# =====================================================
+# Congestion (Monte Carlo proxy)
+# =====================================================
+def estimate_congestion(G,trials=2000,seed=0):
+    random.seed(int(seed))
+    edge_load={}
+    for _ in range(trials):
+        s=random.randrange(G.n)
+        t=random.randrange(G.n)
+        if s==t: continue
+        parent=[-1]*G.n
+        dist=[-1]*G.n
+        dist[s]=0
+        q=collections.deque([s])
         while q:
-            curr = q.popleft()
+            u=q.popleft()
+            for v in G.adj[u]:
+                if dist[v]<0:
+                    dist[v]=dist[u]+1
+                    parent[v]=u
+                    q.append(v)
+        cur=t
+        while parent[cur]!=-1:
+            u=parent[cur]
+            e=(u,cur) if u<cur else (cur,u)
+            edge_load[e]=edge_load.get(e,0)+1
+            cur=u
+    if not edge_load:
+        return 0
+    return max(edge_load.values())
 
-            if curr in neighbors_in_A:
-                found_count += 1
+# =====================================================
+# Experiment
+# =====================================================
+ps=np.array([64,729,4096,15625,46656],dtype=int)
+k=4
 
-            if found_count == target_count:
-                break
+diam2d,diam3d,diamHC=[],[],[]
+bis2d,bis3d,bisHC=[],[],[]
+cong2d,cong3d,congHC=[],[],[]
+hc_sizes=[]
 
-            for nxt in adjB[curr]:
-                if nxt not in dist:
-                    dist[nxt] = dist[curr] + 1
-                    parent[nxt] = curr
-                    q.append(nxt)
+for p in ps:
 
-
-        for v in neighbors_in_A:
-            if v not in dist:
-                continue
-
-            max_dilation = max(max_dilation, dist[v])
-
-            curr = v
-            while curr != u:
-                p_node = parent[curr]
-                edge = tuple(sorted((curr, p_node)))
-                edge_load[edge] += 1
-                curr = p_node
-
-    max_congestion = max(edge_load.values()) if edge_load else 0
-    return max_dilation, max_congestion
-
-
-def compute_average_distance(adj, samples=500):
-    nodes = list(adj.keys())
-    total_dist = 0
-    count = 0
-
-    for _ in range(samples):
-        src = random.choice(nodes)
-        dst = random.choice(nodes)
-        if src == dst:
-            continue
-
-        dist = bfs(adj, src)
-        if dst in dist:
-            total_dist += dist[dst]
-            count += 1
-
-    return total_dist / count if count > 0 else float('inf')
-
-
-def compare_networks(adjA, adjB, link_speed_A, link_speed_B, p, k):
-    print(f"\n{'='*60}")
-    print(f"Network Comparison for p={p}, k={k}")
-    print(f"{'='*60}")
-
-
-    avg_dist_A = compute_average_distance(adjA, samples=500)
-    avg_dist_B = compute_average_distance(adjB, samples=500)
-
-    diam_A = estimate_diameter(adjA, samples=300)
-    diam_B = estimate_diameter(adjB, samples=300)
-
-    print(f"\nNetwork (a) - 2D Mesh + {k} random edges:")
-    print(f"  - Average distance: {avg_dist_A:.2f} hops")
-    print(f"  - Diameter: {diam_A} hops")
-    print(f"  - Link speed: {link_speed_A} Mb/s")
-
-    print(f"\nNetwork (b) - 3D Mesh + {k} random edges:")
-    print(f"  - Average distance: {avg_dist_B:.2f} hops")
-    print(f"  - Diameter: {diam_B} hops")
-    print(f"  - Link speed: {link_speed_B} Mb/s")
-
-    perf_metric_A = avg_dist_A / link_speed_A
-    perf_metric_B = avg_dist_B / link_speed_B
-
-    print(f"  - Network (a): {perf_metric_A:.6f}")
-    print(f"  - Network (b): {perf_metric_B:.6f}")
-
-    # 比较
-    if perf_metric_A < perf_metric_B:
-        speedup = perf_metric_B / perf_metric_A
-        print(f"  - Network (a) is {speedup:.2f}x faster than Network (b)")
-    else:
-        speedup = perf_metric_A / perf_metric_B
-        print(f"  - Network (b) is {speedup:.2f}x faster than Network (a)")
-
-    print(f"\nAdditional Analysis:")
-    print(f"  - Network (a) has {link_speed_A/link_speed_B:.1f}x higher link bandwidth")
-    print(f"  - Network (b) has {avg_dist_A/avg_dist_B:.2f}x shorter average path")
-
-    return perf_metric_A, perf_metric_B
-
-
-
-
-# ============================================================
-# Main Function
-# ============================================================
-
-# p_values = [2**6, 3**6, 4**6, 5**6, 6**6]
-p_values = [2**6, 3**6, 4**6]
-k = 4
-
-
-diam_2d = []
-diam_3d = []
-diam_hc = []
-
-bisec_2d = []
-bisec_3d = []
-bisec_hc = []
-
-
-dilation_lst = []
-congestion_lst = []
-
-
-for p in p_values:
-    print(f"Running p = {p}")
-    #============================Q1 and Q2==============================
     # 2D
-    adj2d = build_2d_mesh(p)
-    adj2d = add_random_edges(adj2d, k)
-    diam_2d.append(estimate_diameter(adj2d))
-    bisec_2d.append(estimate_bisection(adj2d))
+    G=mesh2d(p)
+    add_random_edges(G,k,p)
+    diam2d.append(estimate_diameter(G))
+    bis2d.append(estimate_bisection(G))
+    cong2d.append(estimate_congestion(G,seed=p))
+
     # 3D
-    adj3d = build_3d_mesh(p)
-    adj3d = add_random_edges(adj3d, k)
-    diam_3d.append(estimate_diameter(adj3d))
-    bisec_3d.append(estimate_bisection(adj3d))
+    G=mesh3d(p)
+    add_random_edges(G,k,p)
+    diam3d.append(estimate_diameter(G))
+    bis3d.append(estimate_bisection(G))
+    cong3d.append(estimate_congestion(G,seed=p+1))
 
-    dim_hc = int(2 * (p**(1/6)))
-    num_nodes_hc = 2**dim_hc
-    adjhc = build_hypercube(dim_hc)
-    adjhc = add_random_edges(adjhc, k)
-    diam_hc.append(estimate_diameter(adjhc))
-    bisec_hc.append(estimate_bisection(adjhc))
-    
-    #===============================Q3===================================
-    dilation, congestion = compute_dilation_and_congestion(adjA=adj2d, adjB=adj3d)
-    dilation_lst.append(dilation)
-    congestion_lst.append(congestion)
-    print(f"p = {p}: Dilation = {dilation}, Congestion = {congestion}")
+    # Hypercube
+    G,n=hypercube_from_p(p)
+    hc_sizes.append(n)
+    add_random_edges(G,k,p)
+    diamHC.append(estimate_diameter(G))
+    bisHC.append(estimate_bisection(G))
+    congHC.append(estimate_congestion(G,seed=p+2))
 
+diam2d=np.array(diam2d)
+diam3d=np.array(diam3d)
+diamHC=np.array(diamHC)
+bis2d=np.array(bis2d)
+bis3d=np.array(bis3d)
+bisHC=np.array(bisHC)
+cong2d=np.array(cong2d)
+cong3d=np.array(cong3d)
+congHC=np.array(congHC)
 
+# =====================================================
+# Part 1: Diameter log fit
+# =====================================================
+coef2=np.polyfit(np.log(ps),diam2d,1)
+coef3=np.polyfit(np.log(ps),diam3d,1)
+coefH=np.polyfit(np.log(ps),diamHC,1)
 
-#=====================================plot of Q1=====================================
+# =====================================================
+# Part 2: Bisection linear fit
+# =====================================================
+coefB2=np.polyfit(ps,bis2d,1)
+coefB3=np.polyfit(ps,bis3d,1)
+coefBH=np.polyfit(ps,bisHC,1)
 
-p_fit = np.linspace(min(p_values), max(p_values), 100)
-
-
-
-params_2d, _ = curve_fit(power_law, p_values, diam_2d)
-params_3d, _ = curve_fit(power_law, p_values, diam_3d)
-params_hc, _ = curve_fit(power_law, p_values, diam_hc)
-
-plt.plot(p_fit, power_law(p_fit, *params_2d), '--', label=f"2D fit: {params_2d[0]:.2f}*p^{params_2d[1]:.3f}")
-plt.plot(p_fit, power_law(p_fit, *params_3d), '--', label=f"3D fit: {params_3d[0]:.2f}*p^{params_3d[1]:.3f}")
-plt.plot(p_fit, power_law(p_fit, *params_hc), '--', label=f"hc fit: {params_hc[0]:.2f}*p^{params_hc[1]:.3f}")
-
-
-
-plt.plot(p_values, diam_2d,'s-', label="2D Mesh + k")
-plt.plot(p_values, diam_3d, 'o-', label="3D Mesh + k")
-plt.plot(p_values, diam_hc, '^-', label="Hypercube + k")
+# =====================================================
+# Plotting
+# =====================================================
+plt.figure()
+plt.scatter(ps,diam2d,label="2D")
+plt.scatter(ps,diam3d,label="3D")
+plt.scatter(ps,diamHC,label="Hypercube")
 plt.xlabel("p")
-plt.ylabel("Estimated Diameter")
+plt.ylabel("Diameter")
+plt.title("Diameter scaling")
 plt.legend()
 plt.show()
 
-# print('bisection of 2d-mesh ',bisec_2d)
-# print('bisection of 3d-mesh ',bisec_3d)
-# print('bisection of hypercube ',bisec_hc)
-
-
-#=====================================plot of Q2=====================================
-
-paramss_2d, _ = curve_fit(power_law, p_values, bisec_2d)
-paramss_3d, _ = curve_fit(power_law, p_values, bisec_3d)
-paramss_hc, _ = curve_fit(power_law, p_values, bisec_hc)
-
-plt.plot(p_fit, power_law(p_fit, *paramss_2d), '--', label=f"2D fit: {paramss_2d[0]:.2f}*p^{paramss_2d[1]:.3f}")
-plt.plot(p_fit, power_law(p_fit, *paramss_3d), '--', label=f"3D fit: {paramss_3d[0]:.2f}*p^{paramss_3d[1]:.3f}")
-plt.plot(p_fit, power_law(p_fit, *paramss_hc), '--', label=f"hc fit: {paramss_hc[0]:.2f}*p^{paramss_hc[1]:.3f}")
-
-
-
-plt.plot(p_values, bisec_2d,'s-', label="2D Mesh + k")
-plt.plot(p_values, bisec_3d, 'o-', label="3D Mesh + k")
-plt.plot(p_values, bisec_hc, '^-', label="Hypercube + k")
+plt.figure()
+plt.scatter(ps,bis2d,label="2D")
+plt.scatter(ps,bis3d,label="3D")
+plt.scatter(ps,bisHC,label="Hypercube")
 plt.xlabel("p")
-plt.ylabel("Estimated Bisection")
+plt.ylabel("Bisection width")
+plt.title("Bisection scaling")
 plt.legend()
 plt.show()
 
-
-#=====================================plot of Q3=====================================
-
-plt.plot(p_values, dilation_lst, 'o-', label="dilation vs p")
+plt.figure()
+plt.scatter(ps,cong2d,label="2D")
+plt.scatter(ps,cong3d,label="3D")
+plt.scatter(ps,congHC,label="Hypercube")
 plt.xlabel("p")
-plt.ylabel("Estimated Dilation")
-plt.legend()
-plt.show()
-plt.plot(p_values, congestion_lst, 'o-', label="congestion vs p")
-plt.xlabel("p")
-plt.ylabel("Estimated Congestion")
+plt.ylabel("Congestion (proxy)")
+plt.title("Congestion scaling")
 plt.legend()
 plt.show()
 
-#=====================================output of Q4=====================================
+print("=== Diameter log fits ===")
+print("2D: D(p) ≈ {:.3f} ln(p) + {:.3f}".format(coef2[0],coef2[1]))
+print("3D: D(p) ≈ {:.3f} ln(p) + {:.3f}".format(coef3[0],coef3[1]))
+print("HC: D(p) ≈ {:.3f} ln(p) + {:.3f}".format(coefH[0],coefH[1]))
 
+print("\n=== Bisection linear fits ===")
+print("2D: B(p) ≈ {:.3f} p + {:.3f}".format(coefB2[0],coefB2[1]))
+print("3D: B(p) ≈ {:.3f} p + {:.3f}".format(coefB3[0],coefB3[1]))
+print("HC: B(p) ≈ {:.3f} p + {:.3f}".format(coefBH[0],coefBH[1]))
 
-print("\n" + "="*70)
-print("Question 4: Network Performance Comparison")
-print("="*70)
-
-for para4 in [(2**6, 4),(4**6, 2)]:
-    print(f"\n>>> Q4 p= {para4[0]}, k = {para4[1]}")
-    p1, k1 = para4[0], para4[1]
-
-    adj2d_q4 = build_2d_mesh(p1)
-    adj2d_q4 = add_random_edges(adj2d_q4, k1)
-
-    adj3d_q4 = build_3d_mesh(p1)
-    adj3d_q4 = add_random_edges(adj3d_q4, k1)
-
-    compare_networks(
-        adjA=adj2d_q4,
-        adjB=adj3d_q4,
-        link_speed_A=500,
-        link_speed_B=200,
-        p=p1,
-        k=k1
-    )
-
-
-# Please simulate the network to estimate the parameters. 
-# You need to compute the number of links in E' 
-# that any edge in E is mapped onto and then took the max count to estimate te dilation of the mapping
-
-
-
-# I did 10k sampling times to get the bisection. You can choose a reasonable number of iteration times. 
-# If there is high variance, please consider increasing the sampling times or report the minimum/median number. 
-# But you need to write the report clearly about your data.
-
-# Fit a curve with 5 data points. There are lots of curve fitting functions available, 
-# you are free to choose any based on your choice of tool/language. 
-# You can fit the curve and then match against theoretical one.
-# For part 2, please fit the curve too.
-# For part 3, yes, please include plots and any relevant informations.
-
-
-# Since no explicit strategy is given, like for Parts 1 and 2, can we sample src, dest to approximate both dilation and congestion?
-# You need to simulate the network and compute by deriving the values for each edge and take the max.
-
-
-#Q6 Part 3 Use the identity mapping as specified in the problem statement.
-
-
+print("\nHypercube sizes used:",hc_sizes)
