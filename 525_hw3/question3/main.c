@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
-
+#include <malloc.h>
 /* ══════════════════════════════════════════════════════════════════════
  * §1  Shared node definition
  *     (Q1 fields + Q2 rwlock, so one struct serves both trees)
@@ -436,6 +436,7 @@ static double bench_pbst(Op *D, int D_size, int thread_count) {
     free(threads);
     free_tree(&bst_root);
     bst_root = NULL;
+    malloc_trim(0); 
 
     return elapsed_ms(&t0, &t1);
 }
@@ -446,25 +447,69 @@ static double bench_pbst(Op *D, int D_size, int thread_count) {
 int main(int argc, char **argv) {
     srand(0);
 
-    /* Generate D exactly once (uses rand() stream starting at seed 0) */
     int  D_size;
     Op  *D = generate_D(&D_size);
     printf("Generated %d operations.\n\n", D_size);
 
+    /* 打开 CSV 文件 */
+    FILE *fp = fopen("benchmark_results.csv", "w");
+    if (!fp) {
+        perror("fopen failed");
+        return 1;
+    }
+
+    /* 写表头 */
+    fprintf(fp, "Thread count,Time (ms)\n");
+
     /* ── LBST benchmark ── */
     double lbst_ms = bench_lbst(D, D_size);
-    printf("LBST time          : %.2f ms\n\n", lbst_ms);
+    printf("LBST time : %.2f ms\n\n", lbst_ms);
 
-    /* ── pBST benchmark for MAX_THREAD_COUNT = 1 .. 128 ── */
+    /* 你如果想把 LBST 也写进去 */
+    fprintf(fp, "LBST,%.2f\n", lbst_ms);
+
     printf("%-14s  %s\n", "Thread count", "Time (ms)");
     printf("%-14s  %s\n", "------------", "---------");
 
-    for (int tc = 1; tc <= 16; tc++) {
+    for (int tc = 1; tc <= 128; tc++) {
         double pbst_ms = bench_pbst(D, D_size, tc);
+
         printf("%-14d  %.2f\n", tc, pbst_ms);
         fflush(stdout);
+
+        /* 写入 CSV */
+        fprintf(fp, "%d,%.2f\n", tc, pbst_ms);
     }
 
+    fclose(fp);
     free(D);
     return 0;
 }
+
+
+
+// int main(int argc, char **argv) {
+//     srand(0);
+
+//     /* Generate D exactly once (uses rand() stream starting at seed 0) */
+//     int  D_size;
+//     Op  *D = generate_D(&D_size);
+//     printf("Generated %d operations.\n\n", D_size);
+
+//     /* ── LBST benchmark ── */
+//     double lbst_ms = bench_lbst(D, D_size);
+//     printf("LBST time          : %.2f ms\n\n", lbst_ms);
+
+//     /* ── pBST benchmark for MAX_THREAD_COUNT = 1 .. 128 ── */
+//     printf("%-14s  %s\n", "Thread count", "Time (ms)");
+//     printf("%-14s  %s\n", "------------", "---------");
+
+//     for (int tc = 1; tc <= 128; tc++) {
+//         double pbst_ms = bench_pbst(D, D_size, tc);
+//         printf("%-14d  %.2f\n", tc, pbst_ms);
+//         fflush(stdout);
+//     }
+
+//     free(D);
+//     return 0;
+// }
