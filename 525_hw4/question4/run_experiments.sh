@@ -125,6 +125,8 @@ echo "1,512,$BASE1D_3,$BASE2D_3,1.0000,1.0000,1.0000,1.0000" >> "$OUT3"
 for P in 1 2 3 4 5 6 7 8; do
     N=$(( 512 * P ))
     printf "  p=%-3s  n=%-6s  ... " "$P" "$N"
+    B1=$(get_time "$RUN1" 1 "$N")
+    B2=$(get_time "$RUN2" 1 "$N")
     t1d=$(get_time "$RUN1" "$P" "$N")
     t2d=$(get_time "$RUN2" "$P" "$N")
     if [[ "$t1d" == "ERR" || "$t2d" == "ERR" || "$BASE1D_3" == "ERR" || "$BASE2D_3" == "ERR" ]]; then
@@ -132,8 +134,8 @@ for P in 1 2 3 4 5 6 7 8; do
         echo "$P,$N,ERR,ERR,ERR,ERR,ERR,ERR" >> "$OUT3"
         continue
     fi
-    sp1d=$(safe_div "$BASE1D_3" "$t1d")
-    sp2d=$(safe_div "$BASE2D_3" "$t2d")
+    sp1d=$(safe_div "$B1" "$t1d")
+    sp2d=$(safe_div "$B2" "$t2d")
     eff1d=$(safe_div "$sp1d" "$P")
     eff2d=$(safe_div "$sp2d" "$P")
     echo "1D=${t1d}us sp=${sp1d} eff=${eff1d} | 2D=${t2d}us sp=${sp2d} eff=${eff2d}"
@@ -161,21 +163,27 @@ OUT4=q4_part4.csv
 echo "k,W,n,p_1d,p_2d,time1d_us,speedup1d,efficiency1d,time2d_us,speedup2d,efficiency2d" > "$OUT4"
 
 # Helper: solve p * (ln p)^2 ≈ W, return the closest integer p
+# 修正后的求解器：寻找满足 p * (log2 p)^2 >= W 的最小整数 p (Ceiling logic)
 solve_p2d() {
     local W="$1"
     python3 - "$W" <<'PY'
 import math, sys
 W = float(sys.argv[1])
+if W <= 1.0:
+    print(1)
+    sys.exit(0)
 
-best_p = 1
-best_err = abs(0.0 - W)   # p=1 => 0
-for p in range(2, 1001):
-    v = p * (math.log(p) ** 2)   # natural log; base does not matter asymptotically
-    err = abs(v - W)
-    if err < best_err:
-        best_p, best_err = p, err
-
-print(best_p)
+# 线性搜索满足等效率约束的最小 p 值
+p = 1
+while True:
+    p += 1
+    # 2D 算法的开销项主要受 p * (log p)^2 驱动
+    if p * (math.log2(p)**2) >= W:
+        print(p)
+        break
+    if p > 2048: # 安全限制
+        print(p)
+        break
 PY
 }
 
@@ -199,7 +207,8 @@ for k in 2 3 4 5 6 7 8; do
 
     printf "  k=%-2s  W=%-4s  n=%-6s  p_1d=%-4s  p_2d=%-4s\n" \
            "$k" "$W" "$N" "$P1D" "$P2D"
-
+    B1=$(get_time "$RUN1" 1 "$N")   # T(1, n=512*k)
+    B2=$(get_time "$RUN2" 1 "$N")
     t1d=$(get_time "$RUN1" "$P1D" "$N")
     t2d=$(get_time "$RUN2" "$P2D" "$N")
 
@@ -210,8 +219,8 @@ for k in 2 3 4 5 6 7 8; do
         continue
     fi
 
-    sp1d=$(safe_div "$BASE1D_4" "$t1d")
-    sp2d=$(safe_div "$BASE2D_4" "$t2d")
+    sp1d=$(safe_div "$B1" "$t1d")
+    sp2d=$(safe_div "$B2" "$t2d")
     eff1d=$(safe_div "$sp1d" "$P1D")
     eff2d=$(safe_div "$sp2d" "$P2D")
 
